@@ -7,140 +7,179 @@ os.environ['PYTHONPATH'] ='/usr/local/lib/python3.8'
 
 import findspark
 findspark.init() 
-findspark.find ()
+findspark.find()
 
 import sys
 import pyspark.sql.functions as F
 
-from math import pi
-from datetime import datetime,timedelta
-from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
+from datetime import datetime,timedelta
+from pyspark.sql import SparkSession, DataFrame
 
 EARTH_RADIUS = 6371
 
-def input_paths(date, days_count, events_base_path, event_type):
-    datetm = datetime.strptime(date, '%Y-%m-%d').date()
-    res = [f'{events_base_path}/date={str(datetm - timedelta(days=x))}/event_type={event_type}' for x in range(0, days_count)]
-    return res
 
+def spark_init(date: str) -> SparkSession:
+    return (SparkSession.builder
+                        .master('local[*]')
+                        .appName(f'User-city-{date}')
+                        .getOrCreate())
 
-def actual_city(df):
+def get_cities(df: DataFrame) -> DataFrame:
 
-    actual_city = df\
-        .groupBy('user_id')\
-        .agg(F.max('message_ts').alias('message_ts'))\
-        .join(df, ['message_ts', 'user_id'])\
-        .select(F.col('user_id'), F.col('city').alias('act_city'))
-
-    return actual_city
-
-def home_city(df):
-
-    home_city = df\
-        .groupBy('user_id', 'city')\
-        .agg(F.countDistinct('message_id').alias('cnt_m'),
-             F.max('message_ts').alias('message_ts'))\
-        .filter(F.col('cnt_m') > 27)\
-        .select(F.col('user_id'), F.col('city').alias('home_city'))
-
-    return home_city
-
-def travel_count(df):
-
-    travel_count = df\
-        .groupBy('user_id')\
-        .agg(F.count('city').alias('travel_count'))
-
-    return travel_count
-
-def travel_array(df):
-
-    travel_array = df\
-        .groupBy('user_id')\
-        .agg(F.sort_array(F.collect_list(F.struct("message_ts", "city"))).alias('arr_city'))\
-        .select(F.col('user_id'), F.col('arr_city').getItem('city').alias('travel_array'))
-
-    return travel_array
-
-def message_by_city(message, cities):
+    win_fun_user = Window.partitionBy('user_id').orderBy('message_ts')
+    win_fun_user_city = Window.partitionBy('user_id', 'city').orderBy('message_ts')
     
-    win_function = Window.partitionBy('message_id').orderBy('d')
+    return (df
+            .withColumn('rn1', F.row_number().over(win_fun_user))
+            .withColumn('rn2', F.row_number().over(win_fun_user_city))
+            .withColumn('seq', F.col('rn1') - F.col('rn2'))
+            .groupBy(F.col('user_id'), F.col('city'), F.col('seq'))
+            .agg(F.count(F.col('message_id')).alias('count_message'),
+                 F.max(F.col('message_ts')).alias('message_ts'))
+    )
+
+def find_city(df: DataFrame, city_type: str) -> DataFrame:
+
     # Добавил этот лист так как в java остальных городов не time_zone.
     # Например Australia/Maitland
     # При подаче его в функцию from_utc_timestamp вылезает exception
-    list_city = ['Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Canberra', 'Hobart', 'Darwin']
+    list_city = ['Sydney', 'Melbourne', 'Brisbane', 'Perth',
+                 'Adelaide', 'Canberra', 'Hobart', 'Darwin'
+    ]
 
-    message_city = message\
-        .select(F.col('lat'), F.col('lon'),
-                F.col('event').getItem('message_id').alias('message_id'),
-                F.col('event').getItem('message_ts').alias('message_ts'),
-                F.col('event').getItem('message_from').alias('user_id'))\
-        .crossJoin(cities)\
-        .withColumn('lat_rad', F.col('lat') * pi / 180)\
-        .withColumn('lon_rad', F.col('lon') * pi / 180)\
-        .withColumn('dim_lat_rad', F.col('dim_lat') * pi / 180)\
-        .withColumn('dim_lon_rad', F.col('dim_lon') * pi / 180)\
-        .withColumn('d', 2 * EARTH_RADIUS * F.asin(F.sqrt(F.sin((F.col('dim_lat_rad') - F.col('lat_rad')) / 2) * F.sin((F.col('dim_lat_rad') - F.col('lat_rad')) / 2) + 
-                                                  F.sin((F.col('dim_lon_rad') - F.col('lon_rad')) / 2) * F.sin((F.col('dim_lon_rad') - F.col('lon_rad')) / 2) *
-                                                  F.cos(F.col('lat_rad')) * F.cos(F.col('dim_lat_rad')))))\
-        .withColumn('near_d', F.row_number().over(win_function))\
-        .filter(F.col('near_d') == 1)\
-        .withColumn('local_time', F.when(F.col('city').isin(list_city),
-                     F.from_utc_timestamp(F.col('message_ts'), F.concat_ws('/', F.lit('Australia'), F.col('city')))))\
-        .select(F.col('message_id'), F.col('user_id'), F.col('city'),
-                F.col('local_time'), F.col('message_ts'))
+    return (df
+        .groupBy(F.col('user_id'))
+        .agg(max(F.col('message_ts')).alias('message_ts'))
+        .join(df, ['message_ts', 'user_id'])
+        .withColumn('local_time', 
+            F.when(F.col('city').isin(list_city),
+                F.from_utc_timestamp(
+                    F.col('message_ts'),
+                    F.concat_ws('/', F.lit('Australia'), F.col('city'))
+                )
+            )
+        )
+        .select(F.col('user_id'),
+                F.col('city').alias(city_type),
+                F.col('local_time'))
+    )
 
-    return message_city
+def calculate_count_travel_cities(df: DataFrame) -> DataFrame:
+    
+    return (df
+        .groupBy(F.col('user_id'))
+        .agg(F.count(F.col('city')).alias('travel_count'))
+    )
 
-def user_city(message_city,
-              actual_city,
-              home_city,
-              travel_count,
-              travel_array,
-              output_path,
-              days_count):
+def travel_cities_array(df: DataFrame) -> DataFrame:
 
-    message_city\
-        .join(actual_city, ['user_id'])\
-        .join(home_city, ['user_id'], 'left')\
-        .join(travel_count, ['user_id'], 'left')\
-        .join(travel_array, ['user_id'], 'left')\
-        .select('user_id', 'act_city', 'home_city', 'travel_count',
-                'travel_array', 'message_id', 'city', 'local_time')\
-        .repartition(1).write.mode("overwrite").parquet(f'{output_path}/user_city{days_count}')
+    return (df
+        .groupBy(F.col('user_id'))
+        .agg(F.sort_array(
+                F.collect_list(
+                    F.struct(F.col('message_ts'), F.col('city'))
+                )
+            ).alias('arr_city')
+        )
+        .select(F.col('user_id'),
+                F.col('arr_city').getItem('city').alias('travel_array'))
+    )
+
+def get_messages_by_city(messages: DataFrame, dim_geo: DataFrame) -> DataFrame:
+    
+    win_fun_message = Window.partitionBy('message_id').orderBy('distance')
+    
+    messages_by_city = (messages
+        .select(F.col('lat'),
+                F.col('lon'),
+                F.col('message_id'),
+                F.col('message_ts'),
+                F.col('message_from').alias('user_id')
+        )
+        .crossJoin(dim_geo)
+        .withColumn('dlat', F.sin((F.radians(F.col('lat')) -
+                            F.radians(F.col('dim_lat'))) / 2)
+        )
+        .withColumn('dlon', F.sin((F.radians(F.col('lon')) -
+                            F.radians(F.col('dim_lon'))) / 2)
+        )
+        .withColumn('tmp', F.col('dlat') * F.col('dlat') +
+                           F.col('dlon') * F.col('dlon') *
+                           F.cos(F.radians(F.col('lat'))) *
+                           F.cos(F.radians(F.col('dim_lat')))
+        )
+        .withColumn('tmp1', F.asin(F.sqrt(F.col('tmp'))))
+        .withColumn('distance', 2 * F.col('tmp1') * EARTH_RADIUS)
+        .withColumn('near_d', F.row_number().over(win_fun_message))
+        .filter(F.col('near_d') == 1)
+        .select(F.col('message_id'),
+                F.col('user_id'),
+                F.col('city'),
+                F.col('message_ts'))
+        )
+
+    return messages_by_city
+
+def user_city(user_cities: DataFrame,
+              actual_city: DataFrame,
+              home_city: DataFrame,
+              count_travel_city: DataFrame,
+              travel_cities: DataFrame,
+              output_path: str,
+              days_count: int) -> None:
+
+    (user_cities
+        .groupBy(F.col('user_id'))
+        .distinct()
+        .join(actual_city, ['user_id'], 'left')
+        .join(home_city, ['user_id'], 'left')
+        .join(count_travel_city, ['user_id'], 'left')
+        .join(travel_cities, ['user_id'], 'left')
+        .select(F.col('user_id'),
+                F.col('act_city'),
+                F.col('home_city'),
+                F.col('travel_count'),
+                F.col('travel_array'),
+                actual_city['local_time'])
+        .repartition(1)
+        .write
+        .mode("overwrite")
+        .orc(f'{output_path}/user_city{days_count}')
+    )
 
 
 def main():
 
     date = sys.argv[1]
-    days_count = sys.argv[2]
+    days_count = int(sys.argv[2])
     output_path = sys.argv[3]
     dim_geo_path = sys.argv[4]
-    geo_event_path = sys.argv[5]
+    events_path = sys.argv[5]
 
-
-    spark = SparkSession.builder \
-                        .master('local[*]') \
-                        .appName(f'User_city-{date}') \
-                        .config("spark.files.overwrite", "true")\
-                        .getOrCreate()
+    spark = spark_init(date)
+    datetm = datetime.strptime(date, '%Y-%m-%d').date()
+    date_subs = str(datetm - timedelta(days=days_count))
     
-    paths = input_paths(date, days_count, geo_event_path, 'message')
-    message = spark.read.orc(*paths)
-    cities = spark.read.orc(dim_geo_path).select('city', 'dim_lat', 'dim_lon')
-    
-    message_city = message_by_city(message, cities)
-    user_actual_city = actual_city(message_city)
-    user_home_city = home_city(message_city)
-    user_travel_count = travel_count(message_city)
-    user_travel_array = travel_array(message_city)
+    messages = (spark.read.orc(events_path)
+                        .filter((F.col('date').between(date_subs, datetm)) &
+                                (F.col('evet_type') == 'message')))
 
-    user_city(message_city,
-              user_actual_city,
-              user_home_city,
-              user_travel_count,
-              user_travel_array,
+    dim_geo = spark.read.orc(dim_geo_path).select('city', 'dim_lat', 'dim_lon')
+    messages_by_city = get_messages_by_city(messages, dim_geo)
+
+    user_cities = get_cities(messages_by_city)
+
+    home_city = find_city(user_cities, 'home_city')
+    actual_city = find_city(user_cities, 'act_city')
+    count_travel_city = calculate_count_travel_cities(user_cities)
+    travel_cities = travel_cities_array(user_cities)
+
+    user_city(user_cities,
+              actual_city,
+              home_city,
+              count_travel_city,
+              travel_cities,
               output_path,
               days_count)
 

@@ -36,8 +36,8 @@ def main():
 
     src.select(F.col('id').cast(IntegerType()),
                F.col('city'),
-               F.regexp_replace(F.col('lat'), ',', '.').cast(DoubleType()).alias('lat'),
-               F.regexp_replace(F.col('lng'), ',', '.').cast(DoubleType()).alias('lon'))\
+               F.regexp_replace(F.col('lat'), ',', '.').cast(DoubleType()).alias('dim_lat'),
+               F.regexp_replace(F.col('lng'), ',', '.').cast(DoubleType()).alias('dim_lon'))\
        .repartition(1).write.mode('overwrite').orc(f'{output_base_path}')
 
 if __name__ == "__main__":
