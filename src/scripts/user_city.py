@@ -21,7 +21,11 @@ EARTH_RADIUS = 6371
 
 def spark_init(date: str) -> SparkSession:
     return (SparkSession.builder
-                        .master('local[*]')
+                        .master('yarn')
+                        .config('spark.executor.memory', '1G')
+                        .config('spark.driver.memory', '1G')
+                        .config('spark.executor.cores', 2)
+                        .config('spark.executor.instances', 4)
                         .appName(f'User-city-{date}')
                         .getOrCreate())
 

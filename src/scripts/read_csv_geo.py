@@ -23,11 +23,16 @@ def main():
     dim_geo_url = sys.argv[2]
     output_base_path = sys.argv[3]
 
-    spark = SparkSession.builder \
-                        .master('local[*]') \
-                        .appName(f'Read_file_from_url-{date}') \
-                        .config("spark.files.overwrite", "true")\
+    spark = (SparkSession.builder
+                        .master('yarn')
+                        .config('spark.executor.memory', '1G')
+                        .config('spark.driver.memory', '1G')
+                        .config('spark.executor.cores', 2)
+                        .config('spark.executor.instances', 4)
+                        .appName(f'Read_file_from_url-{date}') 
+                        .config("spark.files.overwrite", "true")
                         .getOrCreate()
+    )
 
     spark.sparkContext.addFile(dim_geo_url)
 

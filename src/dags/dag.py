@@ -52,7 +52,7 @@ def recommend_dm():
     recommendations = SparkSubmitOperator(
         task_id='recommendations.py',
         application='/home/scripts/recommendation.py',
-        application_args=[ANALYTICS_PATH, DIM_GEO_PATH, EVENTS_PATH, '/user/ivichick/analytics/user_city'],
+        application_args=['{{ ds }}', ANALYTICS_PATH, DIM_GEO_PATH, EVENTS_PATH],
     )
 
     [events_partitioned, dim_city] >> dump >> [user_city, message_by_city] >> recommendations
