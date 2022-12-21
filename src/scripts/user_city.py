@@ -54,7 +54,7 @@ def find_city(df: DataFrame, city_type: str) -> DataFrame:
 
     return (df
         .groupBy(F.col('user_id'))
-        .agg(max(F.col('message_ts')).alias('message_ts'))
+        .agg(F.max(F.col('message_ts')).alias('message_ts'))
         .join(df, ['message_ts', 'user_id'])
         .withColumn('local_time', 
             F.when(F.col('city').isin(list_city),
