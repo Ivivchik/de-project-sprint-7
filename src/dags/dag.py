@@ -27,31 +27,31 @@ def recommend_dm():
 
     events_partitioned = SparkSubmitOperator(
         task_id='events_partitioned',
-        application='/home/scripts/repartition.py',
+        application='/lessons/dags/scripts/repartition.py',
         application_args=['{{ ds }}', SOURCE_PATH, EVENTS_PATH],
     )
 
     dim_city = SparkSubmitOperator(
         task_id='dim_city',
-        application='/home/scripts/read_csv_geo.py',
+        application='/lessons/dags/scripts/read_csv_geo.py',
         application_args=['{{ ds }}', URL_GEO, DIM_GEO_PATH],
     )
 
     user_city = SparkSubmitOperator(
         task_id='user_city',
-        application='/home/scripts/user_city.py',
+        application='/lessons/dags/scripts/user_city.py',
         application_args=['{{ ds }}', '30', ANALYTICS_PATH, DIM_GEO_PATH, EVENTS_PATH],
     )
 
     message_by_city = SparkSubmitOperator(
         task_id='message_by_city',
-        application='/home/scripts/message_by_city.py',
+        application='/lessons/dags/scripts/message_by_city.py',
         application_args=['{{ ds }}', '30', ANALYTICS_PATH, DIM_GEO_PATH, EVENTS_PATH],
     )
 
     recommendations = SparkSubmitOperator(
         task_id='recommendations.py',
-        application='/home/scripts/recommendation.py',
+        application='/lessons/dags/scripts/recommendation.py',
         application_args=['{{ ds }}', ANALYTICS_PATH, DIM_GEO_PATH, EVENTS_PATH],
     )
 
