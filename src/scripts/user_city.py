@@ -138,7 +138,7 @@ def user_city(user_cities: DataFrame,
               days_count: int) -> None:
 
     (user_cities
-        .groupBy(F.col('user_id'))
+        .select(F.col('user_id'))
         .distinct()
         .join(actual_city, ['user_id'], 'left')
         .join(home_city, ['user_id'], 'left')
