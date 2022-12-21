@@ -12,7 +12,7 @@ findspark.find()
 import sys
 import pyspark.sql.functions as F
 
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.window import Window
 
 EARTH_RADIUS = 6371
@@ -27,14 +27,14 @@ def spark_init(date: str) -> SparkSession:
                         .appName(f'Recommendations-{date}')
                         .getOrCreate())
 
-def get_user_cnannel(events):
+def get_user_cnannel(events: DataFrame) -> DataFrame:
 
     return (events
         .filter(F.col('event_type') == 'subscription')
         .select(F.col('subscription_channel').alias('channel'),
                 F.col('user').alias('user_id')))
 
-def get_act_message(events):
+def get_act_message(events: DataFrame) -> DataFrame:
 
     df = (events
             .filter(F.col('event_type') == 'message')
@@ -53,7 +53,8 @@ def get_act_message(events):
 
 
 
-def calculate_message_around_km(message_1, message_2):
+def calculate_message_around_km(message_1: DataFrame,
+                                message_2: DataFrame) -> DataFrame:
 
     return (message_1.alias('m1')
         .crossJoin(message_2.alias('m2'))
@@ -80,7 +81,8 @@ def calculate_message_around_km(message_1, message_2):
         )
     )
 
-def calculate_mutual_channel(message_around_km, user_channel):
+def calculate_mutual_channel(message_around_km: DataFrame,
+                             user_channel: DataFrame) -> DataFrame: 
 
     return (message_around_km
         .join(user_channel.alias('u1'), F.col('user_id_left') == F.col('u1.user_id'))
@@ -88,13 +90,14 @@ def calculate_mutual_channel(message_around_km, user_channel):
         .filter(F.col('u1.channel') == F.col('u2.channel'))
     )
 
-def calculate_no_communicate_users(user_with_mutual_channel, all_communicate):
+def calculate_no_communicate_users(user_with_mutual_channel: DataFrame,
+                                   all_communicate: DataFrame) -> DataFrame:
 
     return (user_with_mutual_channel
                 .join(all_communicate, ['user_id_left', 'user_id_right'], 'left_anti')
     )
 
-def calculate_all_communications(df):
+def calculate_all_communications(df: DataFrame) -> DataFrame:
 
     messages = df.filter(F.col('event_type') == 'message')
 
@@ -106,7 +109,7 @@ def calculate_all_communications(df):
                     F.col('message_to').alias('user_id_right'))
     )
 
-def recommends(df, dim_geo, output_path):
+def recommends(df: DataFrame, dim_geo: DataFrame, output_path: str) -> None:
 
     list_city = ['Sydney', 'Melbourne', 'Brisbane', 'Perth',
                  'Adelaide', 'Canberra', 'Hobart', 'Darwin'
@@ -168,7 +171,7 @@ def main():
 
     users_cnannel = get_user_cnannel(events)
     message_1 = get_act_message(events)
-    message_2 = get_act_message(events)
+    message_2 = message_1
     message_around_km = calculate_message_around_km(message_1, message_2)
     mutual_channel = calculate_mutual_channel(message_around_km, users_cnannel)
     all_communications = calculate_all_communications(events)

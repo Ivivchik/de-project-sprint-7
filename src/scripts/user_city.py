@@ -22,7 +22,7 @@ EARTH_RADIUS = 6371
 def spark_init(date: str) -> SparkSession:
     return (SparkSession.builder
                         .master('yarn')
-                        .config('spark.executor.memory', '1G')
+                        .config('spark.executor.memory', '2G')
                         .config('spark.driver.memory', '1G')
                         .config('spark.executor.cores', 2)
                         .config('spark.executor.instances', 4)
@@ -62,6 +62,10 @@ def find_city(df: DataFrame, city_type: str) -> DataFrame:
                     F.col('message_ts'),
                     F.concat_ws('/', F.lit('Australia'), F.col('city'))
                 )
+            ).otherwise(F.from_utc_timestamp(
+                            F.col('message_ts'),
+                            F.concat_ws('/', F.lit('Australia'), F.lit('Canberra'))
+                        )
             )
         )
         .select(F.col('user_id'),
@@ -173,8 +177,9 @@ def main():
     messages_by_city = get_messages_by_city(messages, dim_geo)
 
     user_cities = get_cities(messages_by_city)
+    user_cities.cache()
 
-    home_city = find_city(user_cities, 'home_city')
+    home_city = find_city(user_cities.filter(F.col('count_message') >= 27), 'home_city')
     actual_city = find_city(user_cities, 'act_city')
     count_travel_city = calculate_count_travel_cities(user_cities)
     travel_cities = travel_cities_array(user_cities)
@@ -186,6 +191,8 @@ def main():
               travel_cities,
               output_path,
               days_count)
+
+    user_cities.unpersist()
 
 if __name__ == "__main__":
     main()

@@ -31,7 +31,8 @@ def spark_init(date: str) -> SparkSession:
 
 def message_by_city(events: DataFrame, dim_geo: DataFrame) -> DataFrame:
     
-    win_fun_message = Window.partitionBy('message_id').orderBy('distance')
+    win_fun_message_d = Window.partitionBy('message_id').orderBy('distance')
+    win_fun_first_message = Window.partitionBy('user_id').orderBy('message_ts')
 
     events_by_city = (events
         .select(F.col('lat'),
@@ -54,12 +55,14 @@ def message_by_city(events: DataFrame, dim_geo: DataFrame) -> DataFrame:
         )
         .withColumn('tmp1', F.asin(F.sqrt(F.col('tmp'))))
         .withColumn('distance', 2 * F.col('tmp1') * EARTH_RADIUS)
-        .withColumn('near_d', F.row_number().over(win_fun_message))
+        .withColumn('near_d', F.row_number().over(win_fun_message_d))
         .filter(F.col('near_d') == 1)
+        .withColumn('rn_message', F.row_number().over(win_fun_first_message))
+        .withColumn('event_type', F.when(F.col('rn_message') == 1, 'registartion').otherwise(F.col('event_type')))
         .select(F.col('zone_id'),
                 F.col('event_type'),
-                F.weekofyear(F.col('message_ts')).alias('week'),
-                F.month(F.col('message_ts')).alias('month')))
+                F.date_trunc('month', F.col('message_ts')).alias('month'),
+                F.date_trunc('week', F.col('message_ts')).alias('week')))
 
     return events_by_city
 
