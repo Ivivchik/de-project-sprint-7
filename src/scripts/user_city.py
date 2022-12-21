@@ -171,7 +171,7 @@ def main():
     
     messages = (spark.read.orc(events_path)
                         .filter((F.col('date').between(date_subs, datetm)) &
-                                (F.col('evet_type') == 'message')))
+                                (F.col('event_type') == 'message')))
 
     dim_geo = spark.read.orc(dim_geo_path).select('city', 'dim_lat', 'dim_lon')
     messages_by_city = get_messages_by_city(messages, dim_geo)
