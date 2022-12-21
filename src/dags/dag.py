@@ -14,7 +14,7 @@ URL_GEO = 'https://code.s3.yandex.net/data-analyst/data_engeneer/geo.csv'
 
 @dag(description='Provide project dag for sprint7',
      schedule_interval='@daily',
-     start_date=pendulum.parse('2022-05-31'),
+     start_date=pendulum.parse('2022-06-30'),
      catchup=False,
      tags=['project-spint-7']
      )

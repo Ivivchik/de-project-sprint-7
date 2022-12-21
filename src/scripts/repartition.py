@@ -10,6 +10,8 @@ findspark.init()
 findspark.find ()
 
 import sys
+import pyspark.sql.functions as F
+
 from pyspark.sql import SparkSession
 
 def main():
@@ -23,7 +25,7 @@ def main():
                         .getOrCreate())
 
     src = (spark.read.parquet(geo_events_base_path)
-                .filter('date' <= date)
+                .filter(F.col('date') >= date)
                 .select('event.admins',
                         'event.channel_id',
                         'event.datetime',
